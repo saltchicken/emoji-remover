@@ -49,7 +49,18 @@ fn main() {
         })
         .collect();
 
-    // Join the cleaned lines back together with newlines and print to stdout
+    // ‼️ Join the cleaned lines back together with newlines
     let output = cleaned_lines.join("\n");
-    println!("{}", output);
+
+    // ‼️ Overwrite the original file with the cleaned content
+    match fs::write(filename, output) {
+        Ok(_) => {
+            // ‼️ Print success message to stderr
+            eprintln!("Successfully cleaned and overwrote '{}'.", filename);
+        }
+        Err(e) => {
+            eprintln!("Error writing back to file '{}': {}", filename, e);
+            process::exit(1);
+        }
+    }
 }
