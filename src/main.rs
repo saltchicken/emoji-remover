@@ -37,25 +37,22 @@ fn main() {
                 if comment_part.contains("‼️") {
                     // If it does, truncate the line just before the comment,
                     // and trim any trailing whitespace.
-                    return line[..comment_start_index].trim_end().to_string();
+                    line[..comment_start_index].trim_end().to_string()
                 } else {
                     // If it's a comment but not one of mine, keep the line as is
-                    return line.to_string();
+                    line.to_string()
                 }
             } else {
                 // If there's no comment, keep the line as is
-                return line.to_string();
+                line.to_string()
             }
         })
         .collect();
 
-
     let output = cleaned_lines.join("\n");
-
 
     match fs::write(filename, output) {
         Ok(_) => {
-
             eprintln!("Successfully cleaned and overwrote '{}'.", filename);
         }
         Err(e) => {
@@ -64,3 +61,4 @@ fn main() {
         }
     }
 }
+
