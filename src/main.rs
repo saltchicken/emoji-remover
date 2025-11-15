@@ -7,7 +7,6 @@ use std::process;
 use thiserror::Error;
 use walkdir::{DirEntry, WalkDir};
 
-
 #[derive(Debug, Error)]
 enum AppError {
     #[error("Failed to discover git repository: {0}")]
@@ -26,12 +25,12 @@ enum AppError {
     InvalidUtf8(PathBuf),
 }
 
-
 #[derive(Parser, Debug)]
-#[command(version, about = "Removes '‼️' comments from files in a git repo.", long_about = None)]
+
 struct Cli {
     /// Glob patterns to include (e.g., "*.rs" "src/**")
-    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string()])]
+
+    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string()])]
     include: Vec<String>,
 
     /// Glob patterns to exclude (e.g., "target/*" "*.log")
@@ -39,9 +38,7 @@ struct Cli {
     exclude: Vec<String>,
 }
 
-
 fn process_file(file_path: &Path) -> Result<(), AppError> {
-
     let content_bytes =
         fs::read(file_path).map_err(|e| AppError::FileRead(file_path.to_path_buf(), e))?;
 
@@ -50,20 +47,33 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
 
     let mut modified = false;
 
-
     let cleaned_lines: Vec<String> = content
         .lines()
         .map(|line| {
-            // Check for a line comment marker "//"
-            if let Some(comment_start_index) = line.find("//") {
+            let rust_comment_start = line.find("//");
+            let python_comment_start = line.find('#');
+
+            let comment_start_index: Option<usize> =
+                match (rust_comment_start, python_comment_start) {
+                    // Both found, pick the one that comes first
+                    (Some(r_idx), Some(p_idx)) => Some(r_idx.min(p_idx)),
+                    // Only Rust comment found
+                    (Some(r_idx), None) => Some(r_idx),
+                    // Only Python comment found
+                    (None, Some(p_idx)) => Some(p_idx),
+                    // No comment found
+                    (None, None) => None,
+                };
+
+            if let Some(start_index) = comment_start_index {
                 // Get the part of the string that is the comment
-                let comment_part = &line[comment_start_index..];
+                let comment_part = &line[start_index..];
                 // Check if the comment contains the "!!" emoji
                 if comment_part.contains("‼️") {
                     modified = true;
                     // If it does, truncate the line just before the comment,
                     // and trim any trailing whitespace.
-                    line[..comment_start_index].trim_end().to_string()
+                    line[..start_index].trim_end().to_string()
                 } else {
                     // If it's a comment but not one of mine, keep the line as is
                     line.to_string()
@@ -75,7 +85,6 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
         })
         .collect();
 
-
     if modified {
         let output = cleaned_lines.join("\n");
         fs::write(file_path, output)
@@ -86,18 +95,15 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-
 fn find_git_root() -> Result<PathBuf, AppError> {
     let repo = Repository::discover(".").map_err(AppError::GitDiscovery)?;
     let workdir = repo.workdir().ok_or(AppError::BareRepo)?;
     Ok(workdir.to_path_buf())
 }
 
-
 fn is_git_dir(entry: &DirEntry) -> bool {
     entry.file_name().to_str().map_or(false, |s| s == ".git")
 }
-
 
 fn list_non_ignored_files(
     repo_root: &Path,
@@ -172,7 +178,6 @@ fn list_non_ignored_files(
     Ok(non_ignored_files)
 }
 
-
 fn main() {
     let cli = Cli::parse();
 
@@ -199,10 +204,8 @@ fn main() {
 
     eprintln!("Found {} files to process...", files_to_process.len());
 
-
     for file_path in files_to_process {
         if let Err(e) = process_file(&file_path) {
-
             eprintln!("Error processing file {}: {}", file_path.display(), e);
         }
     }
