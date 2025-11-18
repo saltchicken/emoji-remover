@@ -26,13 +26,10 @@ enum AppError {
 }
 
 #[derive(Parser, Debug)]
-
 struct Cli {
     /// Glob patterns to include (e.g., "*.rs" "src/**")
-
     #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string()])]
     include: Vec<String>,
-
     /// Glob patterns to exclude (e.g., "target/*" "*.log")
     #[arg(long, short = 'e', num_args(1..))]
     exclude: Vec<String>,
@@ -41,29 +38,21 @@ struct Cli {
 fn process_file(file_path: &Path) -> Result<(), AppError> {
     let content_bytes =
         fs::read(file_path).map_err(|e| AppError::FileRead(file_path.to_path_buf(), e))?;
-
     let content = String::from_utf8(content_bytes)
         .map_err(|_| AppError::InvalidUtf8(file_path.to_path_buf()))?;
 
-    let mut modified = false;
+    let is_rust_file = file_path.extension().map_or(false, |ext| ext == "rs");
 
+    let mut modified = false;
     let cleaned_lines: Vec<String> = content
         .lines()
         .map(|line| {
-            let rust_comment_start = line.find("//");
-            let python_comment_start = line.find('#');
-
-            let comment_start_index: Option<usize> =
-                match (rust_comment_start, python_comment_start) {
-                    // Both found, pick the one that comes first
-                    (Some(r_idx), Some(p_idx)) => Some(r_idx.min(p_idx)),
-                    // Only Rust comment found
-                    (Some(r_idx), None) => Some(r_idx),
-                    // Only Python comment found
-                    (None, Some(p_idx)) => Some(p_idx),
-                    // No comment found
-                    (None, None) => None,
-                };
+            // This prevents lines like `#[derive(Debug)]` in Rust from being treated as comments.
+            let comment_start_index = if is_rust_file {
+                line.find("//")
+            } else {
+                line.find('#')
+            };
 
             if let Some(start_index) = comment_start_index {
                 // Get the part of the string that is the comment
@@ -95,6 +84,7 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+// ... rest of the file remains the same ...
 fn find_git_root() -> Result<PathBuf, AppError> {
     let repo = Repository::discover(".").map_err(AppError::GitDiscovery)?;
     let workdir = repo.workdir().ok_or(AppError::BareRepo)?;
@@ -111,44 +101,35 @@ fn list_non_ignored_files(
     excludes: &[String],
 ) -> Result<Vec<PathBuf>, AppError> {
     let repo = Repository::open(repo_root)?;
-
     let include_patterns: Result<Vec<Pattern>, _> =
         includes.iter().map(|s| Pattern::new(s)).collect();
     let include_patterns = include_patterns.map_err(AppError::InvalidGlob)?;
-
     let exclude_patterns: Result<Vec<Pattern>, _> =
         excludes.iter().map(|s| Pattern::new(s)).collect();
     let exclude_patterns = exclude_patterns.map_err(AppError::InvalidGlob)?;
-
     let mut non_ignored_files = Vec::new();
     let walker = WalkDir::new(repo_root)
         .into_iter()
         .filter_entry(|e| !is_git_dir(e));
-
     for entry_result in walker {
         let entry = entry_result?;
         if entry.path().is_dir() {
             continue;
         }
-
         let relative_path = match entry.path().strip_prefix(repo_root) {
             Ok(p) => p,
             Err(_) => continue,
         };
-
         if relative_path.as_os_str().is_empty() {
             continue;
         }
-
         if repo.is_path_ignored(relative_path)? {
             continue;
         }
-
         let relative_path_str = match relative_path.to_str() {
             Some(s) => s.replace('\\', "/"),
             None => continue, // Skip non-UTF8 paths
         };
-
         let mut is_excluded = false;
         for pattern in &exclude_patterns {
             if pattern.matches(&relative_path_str) {
@@ -159,7 +140,6 @@ fn list_non_ignored_files(
         if is_excluded {
             continue;
         }
-
         if include_patterns.is_empty() {
             non_ignored_files.push(entry.path().to_path_buf());
         } else {
@@ -180,7 +160,6 @@ fn list_non_ignored_files(
 
 fn main() {
     let cli = Cli::parse();
-
     let root = match find_git_root() {
         Ok(path) => path,
         Err(err) => {
@@ -188,7 +167,6 @@ fn main() {
             process::exit(1);
         }
     };
-
     let files_to_process = match list_non_ignored_files(&root, &cli.include, &cli.exclude) {
         Ok(files) => files,
         Err(err) => {
@@ -196,19 +174,16 @@ fn main() {
             process::exit(1);
         }
     };
-
     if files_to_process.is_empty() {
         eprintln!("No files found matching criteria.");
         return;
     }
-
     eprintln!("Found {} files to process...", files_to_process.len());
-
     for file_path in files_to_process {
         if let Err(e) = process_file(&file_path) {
             eprintln!("Error processing file {}: {}", file_path.display(), e);
         }
     }
-
     eprintln!("Done.");
 }
+
