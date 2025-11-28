@@ -28,8 +28,8 @@ enum AppError {
 #[derive(Parser, Debug)]
 struct Cli {
     /// Glob patterns to include (e.g., "*.rs" "src/**")
-
-    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string(), "*.jsx".to_string()])]
+    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string(), "*.jsx".to_string(), "*.tsx".to_string()])]
+    // ‼️ CHANGED: Added *.tsx to defaults
     include: Vec<String>,
     /// Glob patterns to exclude (e.g., "target/*" "*.log")
     #[arg(long, short = 'e', num_args(1..))]
@@ -43,35 +43,78 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
         .map_err(|_| AppError::InvalidUtf8(file_path.to_path_buf()))?;
 
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let use_slash_comments = matches!(ext, "rs" | "jsx" | "js" | "ts" | "tsx");
+
+    // ‼️ CHANGED: logic is now inside the loop to handle complex detection
 
     let mut modified = false;
     let cleaned_lines: Vec<String> = content
         .lines()
         .map(|line| {
-            // This prevents lines like `#[derive(Debug)]` in Rust from being treated as comments.
-
-            let comment_start_index = if use_slash_comments {
-                line.find("//")
+            // ‼️ CHANGED: Enhanced comment detection logic for JSX/TSX
+            let (comment_start, is_jsx_block) = if matches!(ext, "jsx" | "tsx") {
+                let slash_idx = line.find("//");
+                let block_idx = line.find("{/*");
+                match (slash_idx, block_idx) {
+                    (Some(s), Some(b)) => {
+                        // Pick the one that appears first
+                        if s < b {
+                            (Some(s), false)
+                        } else {
+                            (Some(b), true)
+                        }
+                    }
+                    (Some(s), None) => (Some(s), false),
+                    (None, Some(b)) => (Some(b), true),
+                    (None, None) => (None, false),
+                }
+            } else if matches!(ext, "rs" | "js" | "ts") {
+                (line.find("//"), false)
             } else {
-                line.find('#')
+                (line.find('#'), false)
             };
 
-            if let Some(start_index) = comment_start_index {
-                // Get the part of the string that is the comment
-                let comment_part = &line[start_index..];
-                // Check if the comment contains the "!!" emoji
-                if comment_part.contains("‼️") {
-                    modified = true;
-                    // If it does, truncate the line just before the comment,
-                    // and trim any trailing whitespace.
-                    line[..start_index].trim_end().to_string()
+            if let Some(start) = comment_start {
+                if is_jsx_block {
+                    // ‼️ CHANGED: Handle block comments like {/* ‼️ ... */}
+                    // Try to find the closing tag on the same line
+                    if let Some(end_offset) = line[start..].find("*/}") {
+                        let end = start + end_offset + 3; // 3 is length of "*/}"
+                        let comment_content = &line[start..end];
+
+                        if comment_content.contains("‼️") {
+                            modified = true;
+                            let prefix = &line[..start];
+                            let suffix = &line[end..];
+                            // If the line is just the comment, trim. Otherwise splice it out.
+                            if suffix.trim().is_empty() {
+                                prefix.trim_end().to_string()
+                            } else {
+                                format!("{}{}", prefix, suffix)
+                            }
+                        } else {
+                            line.to_string()
+                        }
+                    } else {
+                        // Fallback for unclosed block on same line (truncates rest of line)
+                        let comment_part = &line[start..];
+                        if comment_part.contains("‼️") {
+                            modified = true;
+                            line[..start].trim_end().to_string()
+                        } else {
+                            line.to_string()
+                        }
+                    }
                 } else {
-                    // If it's a comment but not one of mine, keep the line as is
-                    line.to_string()
+                    // Standard single-line comment processing
+                    let comment_part = &line[start..];
+                    if comment_part.contains("‼️") {
+                        modified = true;
+                        line[..start].trim_end().to_string()
+                    } else {
+                        line.to_string()
+                    }
                 }
             } else {
-                // If there's no comment, keep the line as is
                 line.to_string()
             }
         })
@@ -188,4 +231,3 @@ fn main() {
     }
     eprintln!("Done.");
 }
-
