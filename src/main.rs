@@ -29,7 +29,7 @@ enum AppError {
 struct Cli {
     /// Glob patterns to include (e.g., "*.rs" "src/**")
     #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string(), "*.jsx".to_string(), "*.tsx".to_string()])]
-    // ‼️ CHANGED: Added *.tsx to defaults
+
     include: Vec<String>,
     /// Glob patterns to exclude (e.g., "target/*" "*.log")
     #[arg(long, short = 'e', num_args(1..))]
@@ -44,13 +44,13 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
 
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
-    // ‼️ CHANGED: logic is now inside the loop to handle complex detection
+
 
     let mut modified = false;
     let cleaned_lines: Vec<String> = content
         .lines()
         .map(|line| {
-            // ‼️ CHANGED: Enhanced comment detection logic for JSX/TSX
+
             let (comment_start, is_jsx_block) = if matches!(ext, "jsx" | "tsx") {
                 let slash_idx = line.find("//");
                 let block_idx = line.find("{/*");
@@ -75,7 +75,7 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
 
             if let Some(start) = comment_start {
                 if is_jsx_block {
-                    // ‼️ CHANGED: Handle block comments like {/* ‼️ ... */}
+
                     // Try to find the closing tag on the same line
                     if let Some(end_offset) = line[start..].find("*/}") {
                         let end = start + end_offset + 3; // 3 is length of "*/}"
