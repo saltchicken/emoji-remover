@@ -28,7 +28,8 @@ enum AppError {
 #[derive(Parser, Debug)]
 struct Cli {
     /// Glob patterns to include (e.g., "*.rs" "src/**")
-    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string()])]
+
+    #[arg(long, short = 'i', num_args(1..), default_values_t = ["*.rs".to_string(), "*.toml".to_string(), "*.py".to_string(), "*.jsx".to_string()])]
     include: Vec<String>,
     /// Glob patterns to exclude (e.g., "target/*" "*.log")
     #[arg(long, short = 'e', num_args(1..))]
@@ -41,14 +42,16 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
     let content = String::from_utf8(content_bytes)
         .map_err(|_| AppError::InvalidUtf8(file_path.to_path_buf()))?;
 
-    let is_rust_file = file_path.extension().map_or(false, |ext| ext == "rs");
+    let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let use_slash_comments = matches!(ext, "rs" | "jsx" | "js" | "ts" | "tsx");
 
     let mut modified = false;
     let cleaned_lines: Vec<String> = content
         .lines()
         .map(|line| {
             // This prevents lines like `#[derive(Debug)]` in Rust from being treated as comments.
-            let comment_start_index = if is_rust_file {
+
+            let comment_start_index = if use_slash_comments {
                 line.find("//")
             } else {
                 line.find('#')
@@ -84,7 +87,6 @@ fn process_file(file_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-// ... rest of the file remains the same ...
 fn find_git_root() -> Result<PathBuf, AppError> {
     let repo = Repository::discover(".").map_err(AppError::GitDiscovery)?;
     let workdir = repo.workdir().ok_or(AppError::BareRepo)?;
